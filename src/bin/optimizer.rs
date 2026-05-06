@@ -1,9 +1,9 @@
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::File;
 use std::io::Write;
-use std::sync::Arc;
-use std::{fmt, sync::Mutex};
+use std::sync::{Arc, RwLock};
 
 // Import Pair from the lib crate
 use croptimizer::{FrequencyMap, GameState, OptimalMove, Pair};
@@ -197,7 +197,7 @@ fn precompute_strategies() -> (
 ) {
     println!("Precomputing optimal strategies for all starting conditions...");
 
-    let freq_map: Arc<Mutex<FrequencyMap>> = Arc::new(Mutex::new(HashMap::new()));
+    let freq_map: Arc<RwLock<FrequencyMap>> = Arc::new(RwLock::new(HashMap::new()));
 
     let compute = |k: u32| {
         let cases: Vec<Vec<u32>> = balls_in_bins(6, k).collect();
@@ -254,7 +254,7 @@ fn main() {
                 // }
 
                 let filename = format!(
-                    "y{}_b{}_p{}.csv",
+                    "output/even/y{}_b{}_p{}.csv",
                     (y_r * 100.) as u32,
                     (b_r * 100.) as u32,
                     (p_r * 100.) as u32

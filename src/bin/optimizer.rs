@@ -248,7 +248,7 @@ fn main() {
                 // }
 
                 let filename = format!(
-                    "output/even/y{}_b{}_p{}.csv",
+                    "y{}_b{}_p{}.csv",
                     (y_r * 100.) as u32,
                     (b_r * 100.) as u32,
                     (p_r * 100.) as u32

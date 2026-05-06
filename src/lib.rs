@@ -719,6 +719,7 @@ pub struct MoveAnalysisWithColors {
     pub expected_purple: f64,
 }
 
+#[derive(Debug)]
 pub struct OptimalMove {
     pub choice: Option<Choice>,
     pub ev_divs: f64,            // Expected price value (not lifeforce)

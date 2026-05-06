@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use toml;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -313,7 +313,7 @@ pub struct GameState {
     pub color_upgrades: HashMap<Plot, u32>, // Upgrade tier for each color
     pub seedlog: Vec<SeedLog>,
     pub reset: bool,
-    pub frequency_map: Option<Arc<Mutex<FrequencyMap>>>,
+    pub frequency_map: Option<Arc<RwLock<FrequencyMap>>>,
 }
 
 impl GameState {
@@ -511,7 +511,7 @@ impl GameState {
         if let (Some(freq_arc), Some(ref start), Some(ref color_snap)) =
             (&self.frequency_map, &start_snapshot, &start_color_snapshot)
         {
-            let freq = freq_arc.lock().unwrap();
+            let freq = freq_arc.read().unwrap();
             if let Some((ev, y, b, p)) = freq.get(&(start.clone(), color_snap.clone())) {
                 return (
                     *ev + self.harvested_value,
@@ -542,7 +542,7 @@ impl GameState {
         if let (Some(freq_arc), Some(start), Some(color_snap)) =
             (&self.frequency_map, start_snapshot, start_color_snapshot)
         {
-            let mut freq = freq_arc.lock().unwrap();
+            let mut freq = freq_arc.write().unwrap();
             freq.insert(
                 (start, color_snap),
                 (

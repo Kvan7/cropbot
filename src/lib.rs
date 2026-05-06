@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use toml;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -288,6 +288,21 @@ pub struct SeedLog {
     pub upgrades: usize,
     pub plot_type: Plot,
 }
+
+pub type FrequencyKey = (Vec<(Pair, u32)>, Vec<(Plot, u32)>);
+pub type FrequencyMap = HashMap<FrequencyKey, (f64, f64, f64, f64)>;
+
+fn snapshot_plots(plots: &HashMap<Pair, PlotState>) -> Vec<(Pair, u32)> {
+    let mut v: Vec<(Pair, u32)> = plots.iter().map(|(&p, s)| (p, s.count)).collect();
+    v.sort_by_key(|(p, _)| format!("{:?}", p));
+    v
+}
+fn snapshot_color_upgrades(color_upgrades: &HashMap<Plot, u32>) -> Vec<(Plot, u32)> {
+    let mut v: Vec<(Plot, u32)> = color_upgrades.iter().map(|(&p, &u)| (p, u)).collect();
+    v.sort_by_key(|(p, _)| format!("{:?}", p));
+    v
+}
+
 #[derive(Clone)]
 pub struct GameState {
     pub plots: HashMap<Pair, PlotState>,
@@ -298,6 +313,7 @@ pub struct GameState {
     pub color_upgrades: HashMap<Plot, u32>, // Upgrade tier for each color
     pub seedlog: Vec<SeedLog>,
     pub reset: bool,
+    pub frequency_map: Option<Arc<Mutex<FrequencyMap>>>,
 }
 
 impl GameState {
@@ -316,6 +332,7 @@ impl GameState {
             color_upgrades,
             seedlog: Vec::new(),
             reset: false,
+            frequency_map: None,
         }
     }
 
@@ -480,6 +497,31 @@ impl GameState {
             );
         }
 
+        let start_snapshot = if self.frequency_map.is_some() {
+            Some(snapshot_plots(&self.plots))
+        } else {
+            None
+        };
+        let start_color_snapshot = if self.frequency_map.is_some() {
+            Some(snapshot_color_upgrades(&self.color_upgrades))
+        } else {
+            None
+        };
+
+        if let (Some(freq_arc), Some(ref start), Some(ref color_snap)) =
+            (&self.frequency_map, &start_snapshot, &start_color_snapshot)
+        {
+            let freq = freq_arc.lock().unwrap();
+            if let Some((ev, y, b, p)) = freq.get(&(start.clone(), color_snap.clone())) {
+                return (
+                    *ev + self.harvested_value,
+                    *y + self.harvested_yellow,
+                    *b + self.harvested_blue,
+                    *p + self.harvested_purple,
+                );
+            }
+        }
+
         let mut best_ev = f64::NEG_INFINITY;
         let mut best_yellow = 0.0;
         let mut best_blue = 0.0;
@@ -495,6 +537,21 @@ impl GameState {
                 best_blue = blue;
                 best_purple = purple;
             }
+        }
+
+        if let (Some(freq_arc), Some(start), Some(color_snap)) =
+            (&self.frequency_map, start_snapshot, start_color_snapshot)
+        {
+            let mut freq = freq_arc.lock().unwrap();
+            freq.insert(
+                (start, color_snap),
+                (
+                    best_ev - self.harvested_value,
+                    best_yellow - self.harvested_yellow,
+                    best_blue - self.harvested_blue,
+                    best_purple - self.harvested_purple,
+                ),
+            );
         }
 
         (best_ev, best_yellow, best_blue, best_purple)

@@ -1,10 +1,12 @@
 use rayon::prelude::*;
-use std::fmt;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
+use std::sync::Arc;
+use std::{fmt, sync::Mutex};
 
 // Import Pair from the lib crate
-use croptimizer::{GameState, OptimalMove, Pair};
+use croptimizer::{FrequencyMap, GameState, OptimalMove, Pair};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 enum StartingPairKind {
@@ -195,6 +197,8 @@ fn precompute_strategies() -> (
 ) {
     println!("Precomputing optimal strategies for all starting conditions...");
 
+    let freq_map: Arc<Mutex<FrequencyMap>> = Arc::new(Mutex::new(HashMap::new()));
+
     let compute = |k: u32| {
         let cases: Vec<Vec<u32>> = balls_in_bins(6, k).collect();
         let results: Vec<(StartingCondition, OptimalMove)> = cases
@@ -215,6 +219,7 @@ fn precompute_strategies() -> (
 
                 // Create GameState and find optimal strategy
                 let mut game = GameState::from_starting_pairs(&pairs);
+                game.frequency_map = Some(Arc::clone(&freq_map));
                 return (start, game.find_optimal_strategy());
             })
             .collect();
@@ -229,13 +234,13 @@ fn precompute_strategies() -> (
     let k5: [(StartingCondition, OptimalMove); 252] = compute(5).try_into().unwrap();
     println!("Done computing strategies for k=5.");
     println!("Done precomputing strategies.");
+
     return (k3, k4, k5);
 }
 
 fn main() {
     println!("-------------------------------------------------------------------------------");
 
-    // if optimizing with atlas nodes that change anything besides the distribution of plot colors, strategies must be recomputed, so include inside that for loop
     let optimal_strategies = precompute_strategies();
 
     for y_r in [0.45, 0.35, 0.25, 0.0] {
@@ -248,7 +253,7 @@ fn main() {
                 // }
 
                 let filename = format!(
-                    "y{}_b{}_p{}.csv",
+                    "output/even/y{}_b{}_p{}.csv",
                     (y_r * 100.) as u32,
                     (b_r * 100.) as u32,
                     (p_r * 100.) as u32
@@ -278,7 +283,7 @@ fn main() {
                         3 => optimal_strategies.0.iter().collect(),
                         4 => optimal_strategies.1.iter().collect(),
                         5 => optimal_strategies.2.iter().collect(),
-                        _ => panic!("only 3, 4, and 5-plot harvests are possible, also should have already paniced"),
+                        _ => panic!(),
                     };
 
                     let results: Vec<String> = strategy

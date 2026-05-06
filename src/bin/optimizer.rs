@@ -241,6 +241,7 @@ fn precompute_strategies() -> (
 fn main() {
     println!("-------------------------------------------------------------------------------");
 
+    // if optimizing with atlas nodes that change anything besides the distribution of plot colors, strategies must be recomputed, so include inside that for loop
     let optimal_strategies = precompute_strategies();
 
     for y_r in [0.45, 0.35, 0.25, 0.0] {
@@ -253,7 +254,7 @@ fn main() {
                 // }
 
                 let filename = format!(
-                    "output/even/y{}_b{}_p{}.csv",
+                    "y{}_b{}_p{}.csv",
                     (y_r * 100.) as u32,
                     (b_r * 100.) as u32,
                     (p_r * 100.) as u32
@@ -283,7 +284,7 @@ fn main() {
                         3 => optimal_strategies.0.iter().collect(),
                         4 => optimal_strategies.1.iter().collect(),
                         5 => optimal_strategies.2.iter().collect(),
-                        _ => panic!(),
+                        _ => panic!("only 3, 4, and 5-plot harvests are possible, also should have already paniced"),
                     };
 
                     let results: Vec<String> = strategy

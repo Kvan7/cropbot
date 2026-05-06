@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::Write;
 
 // Import Pair from the lib crate
-use croptimizer::{GameState, Pair};
+use croptimizer::{GameState, OptimalMove, Pair};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 enum StartingPairKind {
@@ -188,8 +188,54 @@ fn plot_prob(k: u32, y: f32, b: f32, p: f32, start: &StartingCondition) -> f32 {
     return coef * prob;
 }
 
+fn precompute_strategies() -> (
+    [(StartingCondition, OptimalMove); 56],
+    [(StartingCondition, OptimalMove); 126],
+    [(StartingCondition, OptimalMove); 252],
+) {
+    println!("Precomputing optimal strategies for all starting conditions...");
+
+    let compute = |k: u32| {
+        let cases: Vec<Vec<u32>> = balls_in_bins(6, k).collect();
+        let results: Vec<(StartingCondition, OptimalMove)> = cases
+            .into_par_iter()
+            .map(|case| {
+                let start: StartingCondition =
+                    [case[0], case[1], case[2], case[3], case[4], case[5]];
+
+                // Convert StartingCondition to Vec<Pair>
+                let mut pairs = Vec::new();
+                for i in 0..6 {
+                    let kind = StartingPairKind::from(i);
+                    let pair = Pair::from(kind);
+                    for _ in 0..start[i] {
+                        pairs.push(pair);
+                    }
+                }
+
+                // Create GameState and find optimal strategy
+                let mut game = GameState::from_starting_pairs(&pairs);
+                return (start, game.find_optimal_strategy());
+            })
+            .collect();
+
+        return results;
+    };
+
+    let k3: [(StartingCondition, OptimalMove); 56] = compute(3).try_into().unwrap();
+    println!("Done computing strategies for k=3.");
+    let k4: [(StartingCondition, OptimalMove); 126] = compute(4).try_into().unwrap();
+    println!("Done computing strategies for k=4.");
+    let k5: [(StartingCondition, OptimalMove); 252] = compute(5).try_into().unwrap();
+    println!("Done computing strategies for k=5.");
+    println!("Done precomputing strategies.");
+    return (k3, k4, k5);
+}
+
 fn main() {
     println!("-------------------------------------------------------------------------------");
+
+    let optimal_strategies = precompute_strategies();
 
     for y_r in [0.45, 0.35, 0.25, 0.0] {
         for b_r in [0.45, 0.35, 0.25, 0.0] {
@@ -201,7 +247,7 @@ fn main() {
                 // }
 
                 let filename = format!(
-                    "y{}_b{}_p{}.csv",
+                    "output/even/y{}_b{}_p{}.csv",
                     (y_r * 100.) as u32,
                     (b_r * 100.) as u32,
                     (p_r * 100.) as u32
@@ -227,26 +273,18 @@ fn main() {
                         _ => panic!("huh? only 3, 4, and 5-plot harvests are possible"),
                     };
 
-                    let cases: Vec<Vec<u32>> = balls_in_bins(6, k).collect();
-                    let results: Vec<String> = cases
+                    let strategy: Vec<&(StartingCondition, OptimalMove)> = match k {
+                        3 => optimal_strategies.0.iter().collect(),
+                        4 => optimal_strategies.1.iter().collect(),
+                        5 => optimal_strategies.2.iter().collect(),
+                        _ => panic!(),
+                    };
+
+                    let results: Vec<String> = strategy
                         .into_par_iter()
                         .map(|case| {
-                            let start: StartingCondition =
-                                [case[0], case[1], case[2], case[3], case[4], case[5]];
-
-                            // Convert StartingCondition to Vec<Pair>
-                            let mut pairs = Vec::new();
-                            for i in 0..6 {
-                                let kind = StartingPairKind::from(i);
-                                let pair = Pair::from(kind);
-                                for _ in 0..start[i] {
-                                    pairs.push(pair);
-                                }
-                            }
-
-                            // Create GameState and find optimal strategy
-                            let mut game = GameState::from_starting_pairs(&pairs);
-                            let optimal = game.find_optimal_strategy();
+                            let start = &case.0;
+                            let optimal = &case.1;
 
                             format!(
                                 "{}, {}, {:.2}, {:.2}, {:.2}",

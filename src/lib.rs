@@ -59,6 +59,9 @@ pub struct Config {
     pub atlas_lifeforce_quant: f64,
     pub atlas_additional_monster_chance: f64,
     pub atlas_monster_dupe_chance: f64,
+    pub yellow_weight: u32,
+    pub blue_weight: u32,
+    pub purple_weight: u32,
 }
 
 impl Default for Config {
@@ -77,6 +80,9 @@ impl Default for Config {
             atlas_lifeforce_quant: 18.,
             atlas_additional_monster_chance: 10.,
             atlas_monster_dupe_chance: 6.,
+            yellow_weight: 1,
+            blue_weight: 1,
+            purple_weight: 1,
         }
     }
 }
@@ -114,6 +120,10 @@ impl Config {
             || !(0.0..=1.0).contains(&self.t4_transition)
         {
             return Err("All transition rates must be between 0.0 and 1.0".into());
+        }
+
+        if self.yellow_weight == 0 && self.blue_weight == 0 && self.purple_weight == 0 {
+            return Err("At least one color weight must be greater than zero".into());
         }
 
         Ok(())

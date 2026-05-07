@@ -8,6 +8,12 @@ purple_price = 5100
 # and the atlas tree. (60% chance NOT to wilt).
 wilt_rate = 0.4
 
+# base weights for each color to spawn. Previously was all even, but recent research/statistics
+# this may not be the case anymore, 3.28
+yellow_weight = 20
+blue_weight = 40
+purple_weight = 40
+
 # There were empirically determined by Forgotten Arbiter,
 # https://forgottenarbiter.github.io/Poe-Harvest-Mechanics/
 # There is high uncertaintly in the T4 transition rate, but ultimately 

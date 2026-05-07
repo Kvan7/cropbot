@@ -6,7 +6,7 @@ use std::io::Write;
 use std::sync::{Arc, RwLock};
 
 // Import Pair from the lib crate
-use croptimizer::{FrequencyMap, GameState, OptimalMove, Pair};
+use croptimizer::{Config, FrequencyMap, GameState, OptimalMove, Pair};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 enum StartingPairKind {
@@ -154,10 +154,17 @@ const fn factorial(n: u32) -> u32 {
     }
 }
 
-fn weights_to_probs(reduced_y: f32, reduced_b: f32, reduced_p: f32) -> (f32, f32, f32) {
-    let y_weight = 1. - reduced_y;
-    let b_weight = 1. - reduced_b;
-    let p_weight = 1. - reduced_p;
+fn weights_to_probs(
+    base_y: f32,
+    base_b: f32,
+    base_p: f32,
+    reduced_y: f32,
+    reduced_b: f32,
+    reduced_p: f32,
+) -> (f32, f32, f32) {
+    let y_weight = base_y * (1. - reduced_y);
+    let b_weight = base_b * (1. - reduced_b);
+    let p_weight = base_p * (1. - reduced_p);
     let sum = y_weight + b_weight + p_weight;
     return (y_weight / sum, b_weight / sum, p_weight / sum);
 }
@@ -241,6 +248,11 @@ fn precompute_strategies() -> (
 fn main() {
     println!("-------------------------------------------------------------------------------");
 
+    let config = Config::load().unwrap_or(Config::default());
+    let base_y = config.yellow_weight as f32;
+    let base_b = config.blue_weight as f32;
+    let base_p = config.purple_weight as f32;
+
     // if optimizing with atlas nodes that change anything besides the distribution of plot colors, strategies must be recomputed, so include inside that for loop
     let optimal_strategies = precompute_strategies();
 
@@ -254,7 +266,7 @@ fn main() {
                 // }
 
                 let filename = format!(
-                    "output/even/y{}_b{}_p{}.csv",
+                    "y{}_b{}_p{}.csv",
                     (y_r * 100.) as u32,
                     (b_r * 100.) as u32,
                     (p_r * 100.) as u32
@@ -262,7 +274,7 @@ fn main() {
                 let mut file = File::create(&filename).expect("Unable to create file");
                 println!("Writing to {}...", filename);
 
-                let (y, b, p) = weights_to_probs(y_r, b_r, p_r);
+                let (y, b, p) = weights_to_probs(base_y, base_b, base_p, y_r, b_r, p_r);
 
                 // Write CSV header to file
                 writeln!(

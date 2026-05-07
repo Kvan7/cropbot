@@ -255,10 +255,16 @@ fn main() {
 
     // if optimizing with atlas nodes that change anything besides the distribution of plot colors, strategies must be recomputed, so include inside that for loop
     let optimal_strategies = precompute_strategies();
+    let mut atlas_summaries: Vec<(f32, f32, f32, f64, f64, f64)> = vec![];
 
     for y_r in [0.45, 0.35, 0.25, 0.0] {
         for b_r in [0.45, 0.35, 0.25, 0.0] {
             for p_r in [0.45, 0.35, 0.25, 0.0] {
+                // skip any with no path to crop rotation, required for this
+                if y_r != 0.45 && b_r != 0.45 && p_r != 0.45 {
+                    continue;
+                }
+
                 // if y_r > b_r {
                 //     // If yellow is reduced more than blue, we know it's not optimal,
                 //     // because yellow is better htan blue.
@@ -279,9 +285,13 @@ fn main() {
                 // Write CSV header to file
                 writeln!(
                 file,
-                "starting_condition, probability, yellow_lifeforce, blue_lifeforce, purple_lifeforce"
+                "starting_condition, probability, yellow_lifeforce, blue_lifeforce, purple_lifeforce, weighted_avg_Y, weighted_avg_B, weighted_avg_P"
             )
             .expect("Unable to write header");
+
+                let mut atlas_yellow = [0., 0., 0.];
+                let mut atlas_blue = [0., 0., 0.];
+                let mut atlas_purple = [0., 0., 0.];
 
                 for k in [3, 4, 5] {
                     // harvest ordinarily has a 50/50 to be 3 or 4. There is an additional coin flip to add a harvest on the etlas tree ("Bumper Crop").
@@ -299,30 +309,170 @@ fn main() {
                         _ => panic!("only 3, 4, and 5-plot harvests are possible, also should have already paniced"),
                     };
 
-                    let results: Vec<String> = strategy
+                    let results: Vec<(String, f64, f64, f64, f64)> = strategy
                         .into_par_iter()
                         .map(|case| {
                             let start = &case.0;
                             let optimal = &case.1;
+                            let prob = multi * plot_prob(k, y, b, p, &start) as f64;
+                            let avg_y = prob * optimal.ev_yellow;
+                            let avg_b = prob * optimal.ev_blue;
+                            let avg_p = prob * optimal.ev_purple;
 
-                            format!(
-                                "{}, {}, {:.2}, {:.2}, {:.2}",
-                                format_starting_condition(&start),
-                                multi * plot_prob(k, y, b, p, &start),
-                                optimal.ev_yellow,
-                                optimal.ev_blue,
-                                optimal.ev_purple
+                            (
+                                format!(
+                                    "{}, {}, {:.2}, {:.2}, {:.2}, {}, {}, {}",
+                                    format_starting_condition(&start),
+                                    prob,
+                                    optimal.ev_yellow,
+                                    optimal.ev_blue,
+                                    optimal.ev_purple,
+                                    avg_y,
+                                    avg_b,
+                                    avg_p
+                                ),
+                                prob,
+                                avg_y,
+                                avg_b,
+                                avg_p,
                             )
                         })
                         .collect();
-
+                    let mut total_y = 0.0;
+                    let mut total_b = 0.0;
+                    let mut total_p = 0.0;
                     for result in results {
-                        writeln!(file, "{}", result).expect("Unable to write line");
+                        total_y += result.2;
+                        total_b += result.3;
+                        total_p += result.4;
+                        writeln!(file, "{}", result.0).expect("Unable to write line");
                     }
+                    atlas_yellow[k as usize - 3] = total_y;
+                    atlas_blue[k as usize - 3] = total_b;
+                    atlas_purple[k as usize - 3] = total_p;
                 }
+
+                atlas_summaries.push((
+                    y_r,
+                    b_r,
+                    p_r,
+                    atlas_yellow.iter().sum(),
+                    atlas_blue.iter().sum(),
+                    atlas_purple.iter().sum(),
+                ));
             }
         }
     }
+
+    let point_cost_map = HashMap::from([(0, 0), (45, 3), (25, 1), (35, 2), (20, 2), (10, 1)]);
+
+    // output some summaries
+    println!("Best Nodes Calcs:");
+    println!("Config\t\t|EV(divs)\t|PointCost\t|Δ/point\t|ABS Δ Points\t|ABS Δ value");
+    let mut pre_back_ref_compute = vec![];
+    for (y, b, p, y_ev, b_ev, p_ev) in atlas_summaries {
+        let f_y = (y * 100.) as u32;
+        let f_b = (b * 100.) as u32;
+        let f_p = (p * 100.) as u32;
+        let label = format!("Y{}:B{}:P{}", f_y, f_b, f_p);
+
+        let ev = (y_ev * (1. / config.yellow_price))
+            + (b_ev * (1. / config.blue_price))
+            + (p_ev * (1. / config.purple_price));
+
+        let cost = point_cost_map.get(&f_y).unwrap()
+            + point_cost_map.get(&f_b).unwrap()
+            + point_cost_map.get(&f_p).unwrap();
+
+        let points = point_cost_map.get(&f_y).unwrap()
+            + point_cost_map.get(&f_b).unwrap()
+            + point_cost_map.get(&f_p).unwrap();
+
+        pre_back_ref_compute.push((label.clone(), ev, cost, points));
+    }
+
+    let baseline_ev = pre_back_ref_compute
+        .iter()
+        .filter(|x| x.0.matches('0').count() >= 2)
+        .map(|x| x.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    let min_points = 3;
+
+    let max_overall_ev = pre_back_ref_compute
+        .iter()
+        .map(|x| x.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    let mut highest_value: Option<(String, f64, u32, f64)> = None;
+    let mut best_per_point: Option<(String, f64, u32, f64)> = None;
+
+    for (label, ev, cost, points) in pre_back_ref_compute {
+        let delta_points;
+        if points == 3 {
+            delta_points = None;
+        } else {
+            delta_points = Some((ev - baseline_ev) / ((points - min_points) as f64));
+        }
+
+        let abs_delta_points = ev - baseline_ev;
+        let abs_delta_value = ev - max_overall_ev;
+
+        println!(
+            "{}\t|{:.3}\t\t|{}\t\t|{:.3}\t\t|{:.3}\t\t|{:.3}",
+            label,
+            ev,
+            cost,
+            delta_points.unwrap_or(0.),
+            abs_delta_points,
+            abs_delta_value
+        );
+
+        if highest_value.is_none() || ev > highest_value.as_ref().unwrap().1 {
+            highest_value = Some((
+                label.clone(),
+                ev,
+                points,
+                delta_points.unwrap_or(f64::NEG_INFINITY),
+            ));
+        }
+        if best_per_point.is_none()
+            || delta_points.unwrap_or(f64::NEG_INFINITY) > best_per_point.as_ref().unwrap().3
+        {
+            best_per_point = Some((
+                label.clone(),
+                ev,
+                points,
+                delta_points.unwrap_or(f64::NEG_INFINITY),
+            ));
+        }
+    }
+
+    println!();
+    println!();
+
+    println!(
+        "Highest Value: {}\t| Points Spent: {}",
+        highest_value.as_ref().unwrap().0,
+        highest_value.as_ref().unwrap().2
+    );
+    println!(
+        "EV: {:.4} Divines\t\t| Point Value: {:.4} Divines/Point",
+        highest_value.as_ref().unwrap().1,
+        highest_value.as_ref().unwrap().3
+    );
+    println!();
+    println!();
+    println!(
+        "Best Per Point: {}\t| Points Spent: {}",
+        best_per_point.as_ref().unwrap().0,
+        best_per_point.as_ref().unwrap().2
+    );
+    println!(
+        "EV: {:.4} Divines\t\t| Point Value: {:.4} Divines/Point",
+        best_per_point.as_ref().unwrap().1,
+        best_per_point.as_ref().unwrap().3
+    );
 }
 
 #[cfg(test)]
